@@ -281,25 +281,6 @@ data_ready = os.path.exists(os.path.join(OUT_DIR, "scores.csv"))
 with st.sidebar:
     st.markdown("## 📈 Macro Inflation Predictor")
     st.markdown("---")
-    st.markdown("""
-**Model Zoo (8 models)**
-| Model | Type |
-|---|---|
-| Lasso | Linear |
-| Ridge | Linear |
-| Linear Reg | Linear |
-| Random Forest | Tree |
-| Gradient Boost | Tree |
-| XGBoost | Tree |
-| LightGBM | Tree |
-| MLP Neural Net | Neural |
-
-Best model selected per horizon.
-Ensemble used only if >5% better.
-""")
-    st.markdown("---")
-    st.info("Target: US CPI YoY\nHorizons: 1 / 2 / 3 months")
-    st.markdown("**Sources:** BLS · Yahoo Finance · NY Fed")
     st.markdown("---")
     st.markdown("**Data Status**")
     _files = {
