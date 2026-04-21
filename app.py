@@ -115,12 +115,6 @@ def load_report_text():
     return None
 
 def run_pipeline(mode="baseline"):
-    # Hard guard: never execute the model pipeline on Railway or any cloud host.
-    # RAILWAY_ENVIRONMENT is always set by Railway at runtime.
-    if os.environ.get("RAILWAY_ENVIRONMENT") or os.environ.get("RAILWAY_PROJECT_ID"):
-        st.error("Model training is disabled on the cloud deployment. "
-                 "Run `python main.py --report` locally, then commit the output/ folder.")
-        return "", ""
     import subprocess, sys
     cmd = [sys.executable, "main.py"]
     if mode == "report":

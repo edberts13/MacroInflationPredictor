@@ -1,4 +1,4 @@
-# Large data files — re-downloaded fresh on each deploy
+# Large data files — re-downloaded on demand by main.py
 macro_raw.csv
 macro_enhanced.csv
 
@@ -24,6 +24,3 @@ Thumbs.db
 
 # Claude Code internal
 .claude/
-
-# Secrets — set FRED_API_KEY as Railway env var instead
-# config.py is safe to commit (reads from env var with local fallback)

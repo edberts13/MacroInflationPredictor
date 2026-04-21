@@ -5,35 +5,8 @@ Modes:
   python main.py              → baseline 3M backtest (fast, ~3 min)
   python main.py --report     → full multi-horizon forecast + hedge fund report (~15 min)
   python main.py --enhanced   → also fetches extra macro variables first
-
-NOTE: This file is for LOCAL use only. It will not run on Railway.
 """
 import os, sys, warnings, logging
-
-# ── Cloud/build environment guard ─────────────────────────────────────────────
-# Railway does NOT inject RAILWAY_* env vars during the BUILD phase, only
-# at runtime. The reliable signal during a Nixpacks build is /opt/venv —
-# Nixpacks always creates it, and it never exists on a local machine.
-#
-# We check multiple signals to cover both build-time and runtime scenarios:
-#   /opt/venv          → Nixpacks build container (always present)
-#   /opt/venv/bin/python → Nixpacks Python executable path
-#   RAILWAY_ENVIRONMENT  → Railway runtime env var
-#   RAILWAY_PROJECT_ID   → Railway runtime env var
-#   NIXPACKS_VERSION     → set by Nixpacks during build
-_IN_CLOUD = any([
-    os.path.exists("/opt/venv"),
-    sys.executable.startswith("/opt/venv"),
-    os.environ.get("RAILWAY_ENVIRONMENT"),
-    os.environ.get("RAILWAY_PROJECT_ID"),
-    os.environ.get("RAILWAY_SERVICE_ID"),
-    os.environ.get("RAILWAY_DEPLOYMENT_ID"),
-    os.environ.get("NIXPACKS_VERSION"),
-])
-if _IN_CLOUD:
-    print("[main] Cloud/build environment detected (/opt/venv exists or RAILWAY_* set).")
-    print("[main] This script is for local use only. Exiting with code 0.")
-    sys.exit(0)
 import numpy as np
 import pandas as pd
 import matplotlib
