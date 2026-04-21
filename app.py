@@ -499,10 +499,6 @@ with tab0:
 
         st.markdown("")
 
-        # ── Chart ─────────────────────────────────────────────
-        if os.path.exists(chart_path):
-            st.image(chart_path, use_container_width=True)
-
         # ── Live Key Macro Signal Dashboard ───────────────────
         st.markdown('<div class="section-header">📡 Key Macro Signal Dashboard</div>',
                     unsafe_allow_html=True)
