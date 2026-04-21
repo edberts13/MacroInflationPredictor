@@ -1,5 +1,5 @@
 """
-Macro Inflation Predictor — Streamlit Dashboard
+CPI Forecast — Streamlit Dashboard
 Run: streamlit run app.py
 """
 import os, warnings
@@ -13,7 +13,7 @@ import streamlit as st
 warnings.filterwarnings("ignore")
 
 st.set_page_config(
-    page_title="Macro Inflation Predictor",
+    page_title="CPI Forecast",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="collapsed",
@@ -325,7 +325,7 @@ data_ready = os.path.exists(os.path.join(OUT_DIR, "scores.csv"))
 # ── Sidebar ──────────────────────────────────────────────────
 
 # ── Header ───────────────────────────────────────────────────
-st.markdown("# 🏦 Macro Inflation Predictor")
+st.markdown("# 🏦 CPI Forecast")
 st.markdown("##### Ensemble ML · 8 Models · US CPI & Economic Outlook · 3-Month Horizon")
 
 if not data_ready:
@@ -1160,5 +1160,5 @@ with tab6:
 st.markdown("---")
 st.markdown(
     "<div style='text-align:center;color:#4a5568;font-size:12px;'>"
-    "Macro Inflation Predictor · 8-Model Weighted Ensemble · BLS + Yahoo Finance · Research use only"
+    "CPI Forecast · 8-Model Weighted Ensemble · BLS + Yahoo Finance · Research use only"
     "</div>", unsafe_allow_html=True)
