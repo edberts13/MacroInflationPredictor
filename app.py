@@ -48,18 +48,54 @@ st.markdown("""
 # ── Helpers ──────────────────────────────────────────────────
 @st.cache_data(ttl=3600)
 def load_outputs():
-    scores = pd.read_csv(os.path.join(OUT_DIR, "scores.csv"))
-    preds  = pd.read_csv(os.path.join(OUT_DIR, "predictions.csv"),
-                         index_col=0, parse_dates=True)
-    fi_raw = pd.read_csv(os.path.join(OUT_DIR, "feature_importance.csv"),
-                         header=None)
-    fi_raw.columns = ["feature", "importance"]
-    fi_raw["feature"]    = fi_raw["feature"].astype(str)
-    fi_raw["importance"] = pd.to_numeric(fi_raw["importance"], errors="coerce")
-    fi_raw = fi_raw.dropna(subset=["importance"])
-    # Prefer enhanced data if available
-    raw_path = "macro_enhanced.csv" if os.path.exists("macro_enhanced.csv") else "macro_raw.csv"
-    raw    = pd.read_csv(raw_path, index_col="date", parse_dates=True)
+    """
+    Load all precomputed output files. Railway-safe: never touches
+    macro_raw.csv or macro_enhanced.csv (both gitignored).
+
+    Raw data priority:
+      1. macro_enhanced.csv  — full enhanced dataset (local only)
+      2. macro_raw.csv       — base dataset (local only)
+      3. output/macro_indicators.csv — lightweight snapshot committed to git
+      4. Empty DataFrame     — graceful fallback if nothing exists
+    """
+    # ── Scores ──────────────────────────────────────────────────
+    try:
+        scores = pd.read_csv(os.path.join(OUT_DIR, "scores.csv"))
+    except Exception:
+        scores = pd.DataFrame(columns=["model", "RMSE", "MAE", "DirAcc"])
+
+    # ── Predictions (backtest actuals vs models) ─────────────────
+    try:
+        preds = pd.read_csv(os.path.join(OUT_DIR, "predictions.csv"),
+                            index_col=0, parse_dates=True)
+    except Exception:
+        preds = pd.DataFrame()
+
+    # ── Feature importance ───────────────────────────────────────
+    try:
+        fi_raw = pd.read_csv(os.path.join(OUT_DIR, "feature_importance.csv"),
+                             header=None)
+        fi_raw.columns = ["feature", "importance"]
+        fi_raw["feature"]    = fi_raw["feature"].astype(str)
+        fi_raw["importance"] = pd.to_numeric(fi_raw["importance"], errors="coerce")
+        fi_raw = fi_raw.dropna(subset=["importance"])
+    except Exception:
+        fi_raw = pd.DataFrame(columns=["feature", "importance"])
+
+    # ── Raw macro data (Railway-safe cascade) ────────────────────
+    raw = pd.DataFrame()
+    for raw_path in [
+        "macro_enhanced.csv",
+        "macro_raw.csv",
+        os.path.join(OUT_DIR, "macro_indicators.csv"),
+    ]:
+        if os.path.exists(raw_path):
+            try:
+                raw = pd.read_csv(raw_path, index_col="date", parse_dates=True)
+                break
+            except Exception:
+                continue
+
     return scores, preds, fi_raw, raw
 
 @st.cache_data(ttl=3600)
@@ -265,23 +301,53 @@ Ensemble used only if >5% better.
     st.info("Target: US CPI YoY\nHorizons: 1 / 3 / 6 / 9 / 12 months")
     st.markdown("**Sources:** BLS · Yahoo Finance · NY Fed")
     st.markdown("---")
-    st.markdown("**Run Pipeline**")
-    c1, c2 = st.columns(2)
-    with c1:
-        if st.button("⚡ Quick\n(3M)", use_container_width=True):
-            stdout, stderr = run_pipeline("baseline")
-            st.cache_data.clear(); st.rerun()
-    with c2:
-        if st.button("📊 Full\nReport", use_container_width=True):
-            stdout, stderr = run_pipeline("report")
-            st.cache_data.clear(); st.rerun()
+    st.markdown("**Data Status**")
+    _files = {
+        "forecasts.csv":        os.path.join(OUT_DIR, "forecasts.csv"),
+        "predictions.csv":      os.path.join(OUT_DIR, "predictions.csv"),
+        "scores.csv":           os.path.join(OUT_DIR, "scores.csv"),
+        "macro_indicators.csv": os.path.join(OUT_DIR, "macro_indicators.csv"),
+        "macro_report.txt":     os.path.join(OUT_DIR, "macro_report.txt"),
+    }
+    for name, path in _files.items():
+        if os.path.exists(path):
+            st.success(f"✓ {name}", icon=None)
+        else:
+            st.error(f"✗ {name}", icon=None)
+    st.markdown("---")
+    st.caption("To refresh data, run locally:\n```\npython main.py --report\n```\nthen commit and push `output/`.")
 
 # ── Header ───────────────────────────────────────────────────
 st.markdown("# 🏦 Macro Inflation Predictor")
 st.markdown("##### Ensemble ML · 8 Models · US CPI & Economic Outlook · 3-Month Horizon")
 
 if not data_ready:
-    st.warning("Run `python main.py` first to generate outputs, then refresh.")
+    st.error("No precomputed data found. The dashboard needs output files to display results.")
+    st.markdown("""
+    ### How to fix this
+
+    Run the pipeline locally on your machine, then push the results:
+
+    ```bash
+    # Step 1 — generate all output files
+    python main.py --report
+
+    # Step 2 — commit the output folder
+    git add output/
+    git commit -m "Update precomputed output files"
+
+    # Step 3 — push to GitHub (Railway auto-deploys)
+    git push
+    ```
+
+    **Files required in `output/`:**
+    - `forecasts.csv` — forward CPI forecasts
+    - `predictions.csv` — backtest predictions vs actuals
+    - `scores.csv` — model performance metrics
+    - `macro_indicators.csv` — macro data snapshot (for charts)
+    - `macro_report.txt` — text report
+    - `macro_report_chart.png` — report chart
+    """)
     st.stop()
 
 scores, preds, fi, raw = load_outputs()

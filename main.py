@@ -186,6 +186,21 @@ def run_full_report(clean_df: pd.DataFrame, raw_df: pd.DataFrame):
     # ── 7. Generate chart ─────────────────────────────────────────────────────
     plot_full_report(raw_df, all_preds, forecasts, best_models, all_scores, sig)
 
+    # ── 8. Save lightweight indicators snapshot for Railway deployment ────────
+    # macro_enhanced.csv / macro_raw.csv are gitignored (too large).
+    # This small file (~100KB) is committed to git so the Streamlit dashboard
+    # works on Railway without needing to download any data at runtime.
+    _indicator_cols = [
+        "CPI", "CORE_CPI", "PPI", "UNRATE", "PAYROLLS",
+        "SP500", "VIX", "OIL", "GS10", "GS3M", "DXY",
+        "YIELD_SPREAD_10_3M", "HY_SPREAD", "NFCI",
+        "CPI_YOY_BLS", "CORE_CPI_YOY_BLS", "HAS_BLS_DATA",
+    ]
+    _avail = [c for c in _indicator_cols if c in raw_df.columns]
+    raw_df[_avail].to_csv(os.path.join(OUT_DIR, "macro_indicators.csv"))
+    print(f"[main] Indicators snapshot saved → output/macro_indicators.csv "
+          f"({len(_avail)} cols, {len(raw_df)} rows)")
+
 
 def _get_feats(clean_df, h, use_enhanced):
     col = f"inflation_future_{h}m"
