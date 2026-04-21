@@ -1,0 +1,27 @@
+# Large data files — never needed inside the Docker image
+macro_raw.csv
+macro_enhanced.csv
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Git
+.git/
+.gitignore
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Claude Code internal
+.claude/
