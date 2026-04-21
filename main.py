@@ -5,8 +5,25 @@ Modes:
   python main.py              → baseline 3M backtest (fast, ~3 min)
   python main.py --report     → full multi-horizon forecast + hedge fund report (~15 min)
   python main.py --enhanced   → also fetches extra macro variables first
+
+NOTE: This file is for LOCAL use only. It will not run on Railway.
 """
 import os, sys, warnings, logging
+
+# ── Railway guard — exit immediately if running in Railway cloud environment ──
+# Railway stores a Build Command in its UI that overrides all config files.
+# This guard ensures main.py is always a no-op when executed on Railway,
+# regardless of what Railway's build settings say.
+_RAILWAY = (
+    os.environ.get("RAILWAY_ENVIRONMENT") or
+    os.environ.get("RAILWAY_PROJECT_ID") or
+    os.environ.get("RAILWAY_SERVICE_ID") or
+    os.environ.get("RAILWAY_DEPLOYMENT_ID")
+)
+if _RAILWAY:
+    print("[main] Railway environment detected. "
+          "This script is for local use only. Exiting.")
+    sys.exit(0)
 import numpy as np
 import pandas as pd
 import matplotlib
