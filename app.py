@@ -16,7 +16,7 @@ st.set_page_config(
     page_title="Macro Inflation Predictor",
     page_icon="📈",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
 OUT_DIR = "output"
@@ -278,25 +278,6 @@ def direction_confidence(preds: pd.DataFrame, actuals: pd.Series):
 data_ready = os.path.exists(os.path.join(OUT_DIR, "scores.csv"))
 
 # ── Sidebar ──────────────────────────────────────────────────
-with st.sidebar:
-    st.markdown("## 📈 Macro Inflation Predictor")
-    st.markdown("---")
-    st.markdown("---")
-    st.markdown("**Data Status**")
-    _files = {
-        "forecasts.csv":        os.path.join(OUT_DIR, "forecasts.csv"),
-        "predictions.csv":      os.path.join(OUT_DIR, "predictions.csv"),
-        "scores.csv":           os.path.join(OUT_DIR, "scores.csv"),
-        "macro_indicators.csv": os.path.join(OUT_DIR, "macro_indicators.csv"),
-        "macro_report.txt":     os.path.join(OUT_DIR, "macro_report.txt"),
-    }
-    for name, path in _files.items():
-        if os.path.exists(path):
-            st.success(f"✓ {name}", icon=None)
-        else:
-            st.error(f"✗ {name}", icon=None)
-    st.markdown("---")
-    st.caption("To refresh data, run locally:\n```\npython main.py --report\n```\nthen commit and push `output/`.")
 
 # ── Header ───────────────────────────────────────────────────
 st.markdown("# 🏦 Macro Inflation Predictor")
