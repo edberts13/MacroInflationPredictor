@@ -1,6 +1,5 @@
 [build]
 builder = "NIXPACKS"
-buildCommand = "python -X utf8 main.py --report"
 
 [deploy]
 startCommand = "streamlit run app.py --server.port=$PORT --server.address=0.0.0.0 --server.headless=true"
