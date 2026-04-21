@@ -402,7 +402,7 @@ else:
     _latest_data_date = pd.Timestamp.now()
 _next_bls_month   = (_latest_data_date + pd.DateOffset(months=1)).strftime("%b %Y")   # Apr 2026 CPI (next data)
 _next_bls_release = (_latest_data_date + pd.DateOffset(months=2)).strftime("%b %Y")   # May 2026 (release date)
-forecast_date     = _latest_data_date + pd.DateOffset(months=3)                       # 3M ahead date (used in tabs)
+forecast_date     = _latest_data_date + pd.DateOffset(months=1)                       # 1M ahead date (used in tabs)
 
 # Regime label (4-tier — mirrors report.py thresholds)
 if latest_rec_risk >= 60:
@@ -636,12 +636,13 @@ with tab1:
 
     # Gauge — current vs forecast CPI
     with col_gauge:
-        st.markdown('<div class="section-header">CPI YoY Gauge — Current vs 3M Forecast</div>',
+        st.markdown('<div class="section-header">CPI YoY Gauge — Current vs 1M Forecast</div>',
                     unsafe_allow_html=True)
-        gauge_max = max(10, round((latest_forecast or 5) + 2))
+        _gauge_val = _forecast_1m if _forecast_1m is not None else latest_forecast
+        gauge_max = max(10, round((_gauge_val or 5) + 2))
         fig_g = go.Figure(go.Indicator(
             mode="gauge+number+delta",
-            value=latest_forecast if latest_forecast is not None else 0,
+            value=_gauge_val if _gauge_val is not None else 0,
             delta={"reference": latest_actual_val or 0,
                    "increasing": {"color": "#ff6b6b"},
                    "decreasing": {"color": "#64ffda"},
@@ -686,7 +687,7 @@ with tab1:
                 marker_color=colors,
                 text=[f"{v:.2f}%" for v in vals],
                 textposition="outside",
-                name="3M Forecast",
+                name="1M Forecast",
             ))
             if latest_actual_val is not None:
                 fig_dir.add_hline(y=latest_actual_val, line_dash="dash",
