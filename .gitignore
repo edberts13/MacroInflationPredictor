@@ -1,0 +1,29 @@
+# Large data files — re-downloaded fresh on each deploy
+macro_raw.csv
+macro_enhanced.csv
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code internal
+.claude/
+
+# Secrets — set FRED_API_KEY as Railway env var instead
+# config.py is safe to commit (reads from env var with local fallback)

@@ -1,0 +1,83 @@
+====================================================================
+  MACRO INFLATION FORECAST REPORT
+  Generated: 20 April 2026
+====================================================================
+
+  SECTION 1 — CURRENT STATE
+────────────────────────────────────────────────────────────────────
+  Data as of:            March 2026  (released by BLS in April 2026)
+  CPI YoY (March 2026): 3.26%
+  Core CPI YoY:          2.60%
+  3M Avg CPI:            2.98%
+  Fed Target:            2.0%
+  Gap to target:         +1.26pp
+
+  SECTION 2 — FORWARD FORECASTS
+────────────────────────────────────────────────────────────────────
+  Horizon          Forecast     vs Now Best Model            
+  ··························································
+  1 Month             3.73%  ↑0.48pp   Lasso
+  2 Month             2.94%  ↓0.31pp   Lasso
+  3 Month             3.09%  ↓0.16pp   Lasso
+
+  SECTION 3 — MODEL PERFORMANCE (OOS Backtest 2016–present)
+────────────────────────────────────────────────────────────────────
+  Horizon    Best Model                 RMSE      MAE    DirAcc
+  ··························································
+  1M         Lasso                    0.429pp   0.301pp    65.6%
+  2M         Lasso                    0.819pp   0.567pp    51.2%
+  3M         Lasso                    1.118pp   0.732pp    54.2%
+
+  SECTION 4 — INFLATION INTERPRETATION
+────────────────────────────────────────────────────────────────────
+  Inflation is STABLE — forecast to hold near 3.1% in 3 months.
+  At 3.3%, inflation is 1.3pp ABOVE the Fed's 2% target. Monetary policy remains restrictive.
+  The 12-month trajectory points to 3.3%, a continued but gradual disinflation path.
+
+  INFLATION DRIVERS
+
+  ▶ LABOUR MARKET [🟢 COOLING]
+    Payrolls softening to +15K/month. Labour market loosening — dis-inflationary.
+
+  ▶ ENERGY / OIL [🔴 INFLATIONARY]
+    Oil +53.9% YoY at $90/bbl. Adds upward pressure via gasoline and transport with a 1–2 month lag.
+
+  ▶ SHELTER / OER [🟡 2.8% YoY]
+    Owners' Equivalent Rent (24% of CPI) running at 2.8% — decelerating. OER is the stickiest CPI component; even in disinflation it normalises slowly over 12–24 months.
+
+  ▶ US DOLLAR [🟡 DXY -1.4% YoY]
+    Dollar weakening — adds import price pressure with a 3–6 month pass-through lag.
+
+
+  SECTION 5 — ECONOMIC REGIME & RECESSION RISK
+────────────────────────────────────────────────────────────────────
+  Economic Regime: LATE CYCLE
+  ✅ Yield curve POSITIVE (0.65pp). No near-term recession signal from the curve.
+  ✅ VIX at 17.5 — markets are calm, risk appetite healthy.
+  🟡 Credit conditions: MODERATE stress. Moderate credit tightening — watch for further widening.
+  🟡 Equities flat/mixed (+4.2% 6M). No clear directional signal.
+
+  Recession Risk Score: 23/100  [ELEVATED]
+  • Yield curve flattening (0.65pp). Historically a late-cycle warning.
+  • Payrolls averaging only 15K/month — labour market losing momentum.
+  • Credit spreads widening — monitor for further deterioration.
+  • Labour market cooling is the dominant drag.
+  • Base case remains soft landing; risk is non-trivial.
+  • Watch payrolls, credit spreads, and yield curve for deterioration.
+
+  SECTION 6 — KEY SIGNALS & WARNINGS
+────────────────────────────────────────────────────────────────────
+
+  🟡 PAYROLLS SOFTENING
+    Only 15K/month avg — labour market losing momentum. Growth risk rising.
+
+  🟡 CREDIT SPREADS WIDENING
+    HY spreads in upper 40–70th percentile. Monitor for deterioration.
+
+  🟢 MARKETS CALM
+    VIX=17.5. Risk appetite intact. No financial stress signal.
+
+====================================================================
+  DISCLAIMER: Research purposes only. Not financial advice.
+  Sources: BLS, Yahoo Finance, NY Fed. Models: ML ensemble.
+====================================================================

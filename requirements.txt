@@ -1,0 +1,11 @@
+streamlit>=1.32.0
+pandas>=2.1.0
+numpy>=1.26.0,<2.0
+scikit-learn>=1.4.0
+matplotlib>=3.8.0
+yfinance>=0.2.40
+requests>=2.31.0
+xgboost>=2.0.0
+lightgbm>=4.3.0
+plotly>=5.20.0
+openpyxl>=3.1.0
