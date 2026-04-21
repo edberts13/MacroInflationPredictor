@@ -1,5 +1,0 @@
-# Explicitly disable the build phase — app serves pre-computed output files.
-# Do NOT run main.py at build time (it takes 15+ min and requires live API access).
-
-[phases.build]
-cmds = []
