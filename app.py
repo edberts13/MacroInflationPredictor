@@ -298,7 +298,7 @@ Best model selected per horizon.
 Ensemble used only if >5% better.
 """)
     st.markdown("---")
-    st.info("Target: US CPI YoY\nHorizons: 1 / 3 / 6 / 9 / 12 months")
+    st.info("Target: US CPI YoY\nHorizons: 1 / 2 / 3 months")
     st.markdown("**Sources:** BLS · Yahoo Finance · NY Fed")
     st.markdown("---")
     st.markdown("**Data Status**")
@@ -805,7 +805,11 @@ with tab2:
     st.markdown('<div class="section-header">Inflation vs Economic Activity (Scatter)</div>',
                 unsafe_allow_html=True)
     if not eai.empty and "CPI" in raw.columns:
-        cpi_yoy = raw["CPI"].pct_change(12).mul(100).dropna()
+        # Use pre-computed BLS YoY (avoids partial-month contamination)
+        if "CPI_YOY_BLS" in raw.columns:
+            cpi_yoy = raw["CPI_YOY_BLS"].dropna()
+        else:
+            cpi_yoy = raw["CPI"].pct_change(12).mul(100).dropna()
         merged  = pd.concat([eai["EAI_smooth"], cpi_yoy.rename("CPI_YOY")], axis=1).dropna()
         merged["Year"] = merged.index.year
         fig_sc = px.scatter(
@@ -842,7 +846,7 @@ with tab3:
             return ["background-color:#1a2a3a;color:#90cdf4"] * len(row)
         return [""] * len(row)
 
-    disp = scores.copy()
+    disp = scores[["model","RMSE","MAE","DirAcc"]].copy()   # drop N or any extra cols
     disp["RMSE"]   = disp["RMSE"].map("{:.4f}".format)
     disp["MAE"]    = disp["MAE"].map("{:.4f}".format)
     disp["DirAcc"] = disp["DirAcc"].map("{:.1%}".format)
@@ -1013,7 +1017,8 @@ with tab5:
 # ══════════════════════════════════════════════════════════════
 with tab6:
     st.markdown('<div class="section-header">Master Dataset</div>', unsafe_allow_html=True)
-    st.caption(f"{raw.shape[0]} months × {raw.shape[1]} columns · BLS + Yahoo Finance")
+    _src = "BLS + FRED + Yahoo Finance (full)" if raw.shape[1] > 20 else "BLS + Yahoo Finance (key indicators)"
+    st.caption(f"{raw.shape[0]} months × {raw.shape[1]} columns · {_src}")
 
     if "CPI" in raw.select_dtypes(include=[np.number]).columns:
         cpi_corr = raw.select_dtypes(include=[np.number]).corrwith(raw["CPI"]).drop("CPI").sort_values()
