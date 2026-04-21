@@ -114,6 +114,51 @@ def load_report_text():
             return f.read()
     return None
 
+@st.cache_data(ttl=86400)   # refresh once per day
+def fetch_live_market_data():
+    """
+    Pull today's market data from Yahoo Finance.
+    Returns a dict with latest values + the date they're from.
+    Falls back gracefully if yfinance is unavailable.
+    """
+    try:
+        import yfinance as yf
+        today = pd.Timestamp.now().normalize()
+        tickers = {
+            "OIL":          "CL=F",    # WTI Crude futures
+            "VIX":          "^VIX",    # CBOE VIX
+            "GS10":         "^TNX",    # 10Y Treasury yield (%)
+            "GS3M":         "^IRX",    # 3M Treasury yield (%)
+            "SP500":        "^GSPC",   # S&P 500
+        }
+        result = {}
+        fetch_date = None
+        for key, ticker in tickers.items():
+            try:
+                df = yf.download(ticker, period="5d", interval="1d",
+                                 progress=False, auto_adjust=True)
+                if df.empty:
+                    continue
+                close = df["Close"].dropna()
+                if close.empty:
+                    continue
+                result[key] = float(close.iloc[-1])
+                last_dt = close.index[-1]
+                if hasattr(last_dt, "date"):
+                    last_dt = pd.Timestamp(last_dt)
+                if fetch_date is None or last_dt > fetch_date:
+                    fetch_date = last_dt
+            except Exception:
+                continue
+
+        if "GS10" in result and "GS3M" in result:
+            result["YIELD_SPREAD"] = result["GS10"] - result["GS3M"]
+
+        result["_as_of"] = fetch_date.strftime("%d %B %Y").lstrip("0") if fetch_date else "today"
+        return result
+    except Exception:
+        return {"_as_of": "unavailable"}
+
 def run_pipeline(mode="baseline"):
     import subprocess, sys
     cmd = [sys.executable, "main.py"]
@@ -457,6 +502,111 @@ with tab0:
         # ── Chart ─────────────────────────────────────────────
         if os.path.exists(chart_path):
             st.image(chart_path, use_container_width=True)
+
+        # ── Live Key Macro Signal Dashboard ───────────────────
+        st.markdown('<div class="section-header">📡 Key Macro Signal Dashboard</div>',
+                    unsafe_allow_html=True)
+
+        _live = fetch_live_market_data()
+        _market_date = _live.get("_as_of", "today")
+
+        # BLS data date (monthly, from precomputed file)
+        _bls_date_str = _latest_data_date.strftime("%d %B %Y").lstrip("0") if _latest_data_date else "N/A"
+
+        # Pull static values from precomputed macro_indicators.csv
+        def _last(col):
+            if col in raw.columns:
+                s = raw[col].dropna()
+                return float(s.iloc[-1]) if len(s) else None
+            return None
+
+        cpi_yoy   = _last("CPI_YOY_BLS") or _last("CPI")
+        core_cpi  = _last("CORE_CPI_YOY_BLS") or _last("CORE_CPI")
+        unrate    = _last("UNRATE")
+
+        # Live values (from yfinance, refreshed daily)
+        oil       = _live.get("OIL")
+        vix       = _live.get("VIX")
+        spread    = _live.get("YIELD_SPREAD")
+
+        def _row(indicator, value, value_fmt, trend, impact, impact_color, data_date):
+            return f"""
+            <tr style="border-bottom:1px solid #2e3a55;">
+              <td style="padding:10px 14px;color:#ccd6f6;">{indicator}</td>
+              <td style="padding:10px 14px;color:#64ffda;font-weight:600;">{value_fmt}</td>
+              <td style="padding:10px 14px;color:#8892b0;">{trend}</td>
+              <td style="padding:10px 14px;color:{impact_color};font-weight:600;">{impact}</td>
+              <td style="padding:10px 14px;color:#4a5568;font-size:11px;">{data_date}</td>
+            </tr>"""
+
+        rows = ""
+
+        if cpi_yoy is not None:
+            cpi_trend = "↑ above target" if cpi_yoy > 2.0 else "↓ near target"
+            rows += _row("CPI YoY", cpi_yoy, f"{cpi_yoy:.2f}%",
+                         cpi_trend,
+                         "ABOVE TARGET" if cpi_yoy > 2.0 else "AT TARGET",
+                         "#ff6b6b" if cpi_yoy > 3.0 else "#f0c040",
+                         f"BLS · {_bls_date_str}")
+
+        if core_cpi is not None:
+            rows += _row("Core CPI YoY", core_cpi, f"{core_cpi:.2f}%",
+                         "↑ sticky" if core_cpi > 2.5 else "↓ easing",
+                         "Sticky" if core_cpi > 3.0 else "Moderating",
+                         "#f0c040" if core_cpi > 2.5 else "#64ffda",
+                         f"BLS · {_bls_date_str}")
+
+        if unrate is not None:
+            rows += _row("Unemployment", unrate, f"{unrate:.1f}%",
+                         "→ stable" if unrate < 4.5 else "↑ rising",
+                         "Tight" if unrate < 4.5 else "Loosening",
+                         "#64ffda" if unrate < 4.5 else "#f0c040",
+                         f"BLS · {_bls_date_str}")
+
+        if oil is not None:
+            oil_yoy = ((oil / _last("OIL")) - 1) * 100 if _last("OIL") else None
+            oil_impact = "Inflationary" if oil > 80 else "Neutral" if oil > 60 else "Deflationary"
+            oil_color  = "#ff6b6b" if oil > 80 else "#f0c040" if oil > 60 else "#64ffda"
+            rows += _row("Oil (WTI)", oil, f"${oil:.0f}/bbl",
+                         f"${oil:.0f} today",
+                         oil_impact, oil_color,
+                         f"Live · {_market_date}")
+
+        if spread is not None:
+            sp_impact = "Inverted ⚠️" if spread < 0 else "Flat" if spread < 0.5 else "Positive"
+            sp_color  = "#ff6b6b" if spread < 0 else "#f0c040" if spread < 0.5 else "#64ffda"
+            rows += _row("Yield Spread 10Y-3M", spread, f"{spread:.2f}pp",
+                         "Positive" if spread >= 0 else "INVERTED",
+                         sp_impact, sp_color,
+                         f"Live · {_market_date}")
+
+        if vix is not None:
+            vix_impact = "Fear/Stress" if vix > 30 else "Cautious" if vix > 20 else "Calm"
+            vix_color  = "#ff6b6b" if vix > 30 else "#f0c040" if vix > 20 else "#64ffda"
+            rows += _row("VIX", vix, f"{vix:.1f}",
+                         "Elevated" if vix > 20 else "Calm",
+                         vix_impact, vix_color,
+                         f"Live · {_market_date}")
+
+        st.markdown(f"""
+        <table style="width:100%;border-collapse:collapse;background:#0e1117;
+                      border:1px solid #2e3a55;border-radius:6px;">
+          <thead>
+            <tr style="background:#1e2130;border-bottom:2px solid #2e3a55;">
+              <th style="padding:10px 14px;color:#64ffda;text-align:left;">Indicator</th>
+              <th style="padding:10px 14px;color:#64ffda;text-align:left;">Current Value</th>
+              <th style="padding:10px 14px;color:#64ffda;text-align:left;">Trend</th>
+              <th style="padding:10px 14px;color:#64ffda;text-align:left;">Inflation Impact</th>
+              <th style="padding:10px 14px;color:#64ffda;text-align:left;">As of</th>
+            </tr>
+          </thead>
+          <tbody>{rows}</tbody>
+        </table>
+        <p style="color:#4a5568;font-size:11px;margin-top:6px;">
+          📅 BLS data: {_bls_date_str} &nbsp;|&nbsp;
+          📡 Market data (Oil · VIX · Yields): {_market_date} — refreshed daily
+        </p>
+        """, unsafe_allow_html=True)
 
         # ── Model performance table ───────────────────────────
         st.markdown('<div class="section-header">📊 Model Performance by Horizon</div>',
