@@ -1,0 +1,11 @@
+{
+  "kind": "single",
+  "name": "RandomForest",
+  "subset": "economic_core",
+  "include_m1": false,
+  "include_m2": false,
+  "params": "{\"max_depth\": 3, \"min_samples_leaf\": 2, \"n_estimators\": 200}",
+  "cv_logloss": 0.14214187773345258,
+  "cv_auc": 0.9765556045895852,
+  "horizon_months": 12
+}

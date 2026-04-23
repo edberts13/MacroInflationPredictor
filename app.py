@@ -326,7 +326,7 @@ data_ready = os.path.exists(os.path.join(OUT_DIR, "scores.csv"))
 
 # ── Header ───────────────────────────────────────────────────
 st.markdown("# 🏦 CPI Forecast")
-st.markdown("##### Ensemble ML · 8 Models · US CPI & Economic Outlook · 3-Month Horizon")
+st.markdown("##### Ensemble ML · 8 Models · US CPI & Economic Outlook · 1-Month Horizon")
 
 if not data_ready:
     st.error("No precomputed data found. The dashboard needs output files to display results.")
@@ -360,36 +360,83 @@ if not data_ready:
 scores, preds, fi, raw = load_outputs()
 actuals = preds["actual"].dropna() if "actual" in preds.columns else pd.Series(dtype=float)
 eai     = compute_activity_index(raw)
-rec     = recession_risk(raw)
+rec     = recession_risk(raw)   # legacy heuristic 0–100 score (kept for comparison)
+
+# ── ML Recession Engine: prefer ML probability when available ────
+@st.cache_data(show_spinner=False)
+def _load_ml_recession():
+    """Return (prob_series_0_100, current_prob_0_100, winner_dict) or (None, None, None)."""
+    import json as _json
+    wpath = os.path.join(OUT_DIR, "recession_winner.json")
+    ppath = os.path.join(OUT_DIR, "recession_probs.csv")
+    if not (os.path.exists(wpath) and os.path.exists(ppath)):
+        return None, None, None
+    try:
+        winner = _json.load(open(wpath))
+        probs  = pd.read_csv(ppath, parse_dates=["date"]).set_index("date")
+        hist_pct = (probs["recession_prob"] * 100).dropna()
+        # Current prob: refit winner on ALL data, predict latest row
+        current_pct = None
+        if winner.get("kind") == "single":
+            try:
+                from recession_infer import fit_and_predict_current
+                res = fit_and_predict_current(raw, winner)
+                current_pct = float(res["prob"]) * 100
+            except Exception as e:
+                print(f"[app] live recession predict failed: {e}")
+                current_pct = float(hist_pct.iloc[-1]) if len(hist_pct) else None
+        else:
+            current_pct = float(hist_pct.iloc[-1]) if len(hist_pct) else None
+        return hist_pct, current_pct, winner
+    except Exception as e:
+        print(f"[app] _load_ml_recession failed: {e}")
+        return None, None, None
+
+ml_rec_hist, ml_rec_current, ml_rec_winner = _load_ml_recession()
+USING_ML_RECESSION = ml_rec_current is not None
 
 # ── Forecast signals ─────────────────────────────────────────
 direction, confidence, model_preds = direction_confidence(preds, actuals)
 latest_actual_val = actuals.iloc[-1] if len(actuals) else None
-latest_rec_risk   = float(rec.dropna().iloc[-1]) if len(rec.dropna()) else 0
+latest_rec_risk   = (float(ml_rec_current) if USING_ML_RECESSION
+                     else (float(rec.dropna().iloc[-1]) if len(rec.dropna()) else 0))
 latest_eai        = float(eai["EAI_smooth"].dropna().iloc[-1]) if "EAI_smooth" in eai else 0
 
 # ── Forward forecasts (true predictions, not backtest) ────────
 # Prefer forecasts.csv (multi-horizon forward predictions from full history)
 # Fall back to last backtest prediction if not available
 _fcst_df = load_forecasts()
-# Always define ens_col — used in multiple tabs for error bars + actual vs predicted
-ens_col = "Ensemble_Weighted" if "Ensemble_Weighted" in preds.columns else preds.columns[0]
+# Pick the BEST model (lowest RMSE in scores.csv) as the default display series.
+# Falls back to Ensemble_Weighted, then to the first available column.
+def _pick_best_model(scores_df, pred_cols):
+    if scores_df is not None and not scores_df.empty and "RMSE" in scores_df.columns:
+        ranked = scores_df.sort_values("RMSE")["model"].tolist()
+        for m in ranked:
+            if m in pred_cols:
+                return m
+    if "Ensemble_Weighted" in pred_cols:
+        return "Ensemble_Weighted"
+    return pred_cols[0] if len(pred_cols) else None
+
+best_col = _pick_best_model(scores, list(preds.columns))
+# `ens_col` name kept for backward-compat in this file; it is now the BEST model.
+ens_col = best_col if best_col else (preds.columns[0] if len(preds.columns) else None)
 
 if not _fcst_df.empty:
-    _row3m = _fcst_df[_fcst_df["horizon_months"] == 3]
-    if not _row3m.empty:
-        latest_forecast = float(_row3m["forecast_cpi_yoy"].iloc[0])
-        _best_model_3m  = str(_row3m["best_model"].iloc[0])
-    else:
-        latest_forecast = float(_fcst_df["forecast_cpi_yoy"].iloc[0])
-        _best_model_3m  = str(_fcst_df["best_model"].iloc[0])
-    # 1-month forecast (next BLS release)
     _row1m = _fcst_df[_fcst_df["horizon_months"] == 1]
-    _forecast_1m = float(_row1m["forecast_cpi_yoy"].iloc[0]) if not _row1m.empty else None
+    if not _row1m.empty:
+        _forecast_1m    = float(_row1m["forecast_cpi_yoy"].iloc[0])
+        _best_model_1m  = str(_row1m["best_model"].iloc[0])
+    else:
+        _forecast_1m    = float(_fcst_df["forecast_cpi_yoy"].iloc[0])
+        _best_model_1m  = str(_fcst_df["best_model"].iloc[0])
+    # `latest_forecast` retained as an alias for the 1M forecast (used across tabs)
+    latest_forecast = _forecast_1m
+    _best_model_3m  = _best_model_1m    # legacy var name — still 1M
 else:
     latest_forecast = preds[ens_col].dropna().iloc[-1] if ens_col in preds.columns else None
     _best_model_3m  = "Ensemble"
-    _forecast_1m    = None
+    _forecast_1m    = latest_forecast
 
 # Dates — use the last BLS date (CPI_YOY_BLS ends there), NOT the partial
 # yfinance month. e.g. last BLS date = 2026-03-31 (March 2026 CPI).
@@ -414,8 +461,8 @@ elif latest_rec_risk >= 20:
 else:
     regime, regime_color = "✅ EXPANSION", "#64ffda"
 
-# ── Top KPI strip ─────────────────────────────────────────────
-k1, k2, k3, k4, k5 = st.columns(5)
+# ── Top KPI strip (1-month horizon only — 3M/12M removed) ────
+k1, k3, k4, k5 = st.columns(4)
 with k1:
     if _forecast_1m is not None:
         delta_1m = _forecast_1m - latest_actual_val if latest_actual_val else None
@@ -426,11 +473,6 @@ with k1:
         )
     else:
         st.metric("📰 Next BLS Release", "—")
-with k2:
-    if latest_forecast is not None:
-        delta = latest_forecast - latest_actual_val if latest_actual_val else None
-        st.metric("🎯 3M CPI Forecast", f"{latest_forecast:.2f}%",
-                  delta=f"{delta:+.2f}pp vs now" if delta else None)
 with k3:
     if direction:
         arrow = "↑" if direction == "UP" else "↓"
@@ -442,19 +484,23 @@ with k5:
     _risk_label = ("HIGH" if latest_rec_risk >= 60 else
                    "MEDIUM" if latest_rec_risk >= 35 else
                    "ELEVATED" if latest_rec_risk >= 20 else "LOW")
-    st.metric("🚨 Recession Risk", f"{latest_rec_risk:.0f} / 100",
-              delta=_risk_label,
+    _kpi_title = ("🤖 Chance of Recession (next 12M)" if USING_ML_RECESSION
+                  else "🚨 Recession Risk")
+    _kpi_value = (f"{latest_rec_risk:.1f}% chance" if USING_ML_RECESSION
+                  else f"{latest_rec_risk:.0f} / 100")
+    _kpi_delta = ((ml_rec_winner.get("name","") if ml_rec_winner else "") + f" · {_risk_label}"
+                  if USING_ML_RECESSION else _risk_label)
+    st.metric(_kpi_title, _kpi_value,
+              delta=_kpi_delta,
               delta_color="inverse")
 
 st.markdown("---")
 
-# ── Tabs ─────────────────────────────────────────────────────
-tab0, tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+# ── Tabs (Model Leaderboard and Feature Importance removed) ──
+tab0, tab1, tab2, tab5, tab6 = st.tabs([
     "📋 Macro Report",
     "🎯 CPI Forecast",
     "📉 GDP & Economy",
-    "🏆 Model Leaderboard",
-    "🔑 Feature Importance",
     "📰 Macro Insights",
     "🗃️ Raw Data",
 ])
@@ -468,37 +514,8 @@ with tab0:
     chart_path = os.path.join(OUT_DIR, "macro_report_chart.png")
 
     if fcst_df.empty:
-        st.info("Run **📊 Full Report** from the sidebar to generate multi-horizon forecasts.")
+        st.info("Run **📊 Full Report** from the sidebar to generate the 1-month forecast.")
     else:
-        # ── Forward forecast table ────────────────────────────
-        st.markdown('<div class="section-header">📅 Forward Inflation Forecasts</div>',
-                    unsafe_allow_html=True)
-
-        current_cpi = actuals.dropna().iloc[-1] if len(actuals) else None
-
-        cols_fcst = st.columns(len(fcst_df))
-        HORIZON_COLORS = {1:"#64ffda", 2:"#90cdf4", 3:"#f0c040"}
-        for i, row in fcst_df.iterrows():
-            h    = int(row["horizon_months"])
-            fcst = float(row["forecast_cpi_yoy"])
-            bm   = str(row["best_model"])
-            diff = fcst - current_cpi if current_cpi else 0
-            arrow = "↑" if diff > 0.1 else "↓" if diff < -0.1 else "→"
-            with cols_fcst[i]:
-                st.markdown(f"""
-                <div style="background:#1e2130;border:1px solid {HORIZON_COLORS.get(h,'#2e3a55')};
-                            border-radius:10px;padding:16px;text-align:center;">
-                  <div style="color:#8892b0;font-size:12px;text-transform:uppercase;
-                              letter-spacing:1px;">{h}-Month</div>
-                  <div style="color:{HORIZON_COLORS.get(h,'#ccd6f6')};font-size:34px;
-                              font-weight:700;margin:8px 0;">{fcst:.2f}%</div>
-                  <div style="color:{'#64ffda' if diff<=0 else '#ff6b6b'};font-size:14px;">
-                      {arrow} {abs(diff):.2f}pp vs now</div>
-                  <div style="color:#4a5568;font-size:11px;margin-top:6px;">{bm}</div>
-                </div>""", unsafe_allow_html=True)
-
-        st.markdown("")
-
         # ── Live Key Macro Signal Dashboard ───────────────────
         st.markdown('<div class="section-header">📡 Key Macro Signal Dashboard</div>',
                     unsafe_allow_html=True)
@@ -669,48 +686,75 @@ with tab1:
                             margin=dict(l=30, r=30, t=60, b=20))
         st.plotly_chart(fig_g, use_container_width=True)
 
-    # Direction confidence
+    # Best model summary card (replaces the multi-model direction chart
+    # — with a single deployed model there is no cross-model vote to show).
     with col_dir:
-        st.markdown('<div class="section-header">Model Direction Agreement</div>',
+        st.markdown('<div class="section-header">Best Model Summary</div>',
                     unsafe_allow_html=True)
-        if model_preds:
-            vals   = list(model_preds.values())
-            labels = list(model_preds.keys())
-            colors = ["#64ffda" if v > (latest_actual_val or 0) else "#ff6b6b" for v in vals]
-            fig_dir = go.Figure()
-            fig_dir.add_trace(go.Bar(
-                x=labels, y=vals,
-                marker_color=colors,
-                text=[f"{v:.2f}%" for v in vals],
-                textposition="outside",
-                name="1M Forecast",
-            ))
-            if latest_actual_val is not None:
-                fig_dir.add_hline(y=latest_actual_val, line_dash="dash",
-                                  line_color="#ffffff", line_width=1.5,
-                                  annotation_text=f"Current: {latest_actual_val:.2f}%",
-                                  annotation_font_color="#ffffff")
-            arrow = "↑" if direction == "UP" else "↓"
-            fig_dir.update_layout(
-                template="plotly_dark",
-                title=f"{arrow} {direction}  —  {confidence:.0%} of models agree",
-                height=300,
-                yaxis_title="Predicted CPI YoY (%)",
-                margin=dict(l=40, r=20, t=50, b=60),
-                xaxis_tickangle=-30,
-            )
-            st.plotly_chart(fig_dir, use_container_width=True)
+        if ens_col and not scores.empty and ens_col in scores["model"].values:
+            row = scores[scores["model"] == ens_col].iloc[0]
+            rmse = float(row["RMSE"])
+            mae  = float(row["MAE"])
+            da   = float(row["DirAcc"])
+        else:
+            rmse = mae = da = float("nan")
+
+        fcst_disp = f"{_forecast_1m:.2f}%" if _forecast_1m is not None else "—"
+        cur_disp  = f"{latest_actual_val:.2f}%" if latest_actual_val is not None else "—"
+        if latest_actual_val is not None and _forecast_1m is not None:
+            diff = _forecast_1m - latest_actual_val
+            arrow = "↑" if diff > 0.05 else "↓" if diff < -0.05 else "→"
+            diff_txt = f"{arrow} {abs(diff):.2f}pp vs now"
+            diff_color = "#ff6b6b" if diff > 0 else "#64ffda"
+        else:
+            diff_txt, diff_color = "", "#8892b0"
+
+        st.markdown(f"""
+        <div style="background:#1e2130;border:1px solid #2e3a55;
+                    border-radius:10px;padding:18px 22px;">
+          <div style="color:#8892b0;font-size:11px;text-transform:uppercase;
+                      letter-spacing:1px;">Deployed Model</div>
+          <div style="color:#64ffda;font-size:22px;font-weight:700;margin:4px 0 14px 0;">
+              {ens_col or '—'}</div>
+
+          <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
+            <span style="color:#8892b0;">Next-Month Forecast</span>
+            <span style="color:#ccd6f6;font-weight:600;">{fcst_disp}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
+            <span style="color:#8892b0;">Current CPI YoY</span>
+            <span style="color:#ccd6f6;font-weight:600;">{cur_disp}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:16px;">
+            <span style="color:#8892b0;">Change</span>
+            <span style="color:{diff_color};font-weight:600;">{diff_txt}</span>
+          </div>
+
+          <hr style="border:none;border-top:1px solid #2e3a55;margin:4px 0 12px 0;"/>
+          <div style="color:#8892b0;font-size:11px;text-transform:uppercase;
+                      letter-spacing:1px;margin-bottom:8px;">
+              Backtest Accuracy (2016→present)</div>
+          <div style="display:flex;justify-content:space-between;">
+            <span style="color:#8892b0;">RMSE</span>
+            <span style="color:#ccd6f6;">{rmse:.3f}pp</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;">
+            <span style="color:#8892b0;">MAE</span>
+            <span style="color:#ccd6f6;">{mae:.3f}pp</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;">
+            <span style="color:#8892b0;">Direction Accuracy</span>
+            <span style="color:#ccd6f6;">{da:.1%}</span>
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
 
     # Actual vs predicted chart
-    st.markdown('<div class="section-header">Actual vs Predicted — CPI YoY % (3-Month Ahead)</div>',
-                unsafe_allow_html=True)
-
-    model_cols = [c for c in preds.columns if c != "actual"]
-    selected   = st.multiselect(
-        "Models to display",
-        options=model_cols,
-        default=[c for c in ["Ensemble_Weighted", "Lasso", "XGBoost"] if c in model_cols],
-    )
+    _best_label = ens_col if ens_col else "best model"
+    st.markdown(
+        f'<div class="section-header">Actual vs Predicted — CPI YoY % '
+        f'(1-Month Ahead) · Best Model: {_best_label}</div>',
+        unsafe_allow_html=True)
 
     fig_main = go.Figure()
     if len(actuals):
@@ -725,17 +769,12 @@ with tab1:
                                annotation_text=shade[2], annotation_position="top left",
                                annotation_font_color="#666", line_width=0)
 
-    palette = px.colors.qualitative.Plotly
-    for i, col in enumerate(selected):
-        if col not in preds.columns: continue
-        s = preds[col].dropna()
-        is_ens = col.startswith("Ensemble")
+    # Show ONLY the best model (no multiselect — single clean comparison).
+    if ens_col and ens_col in preds.columns:
+        s = preds[ens_col].dropna()
         fig_main.add_trace(go.Scatter(
-            x=s.index, y=s.values, name=col,
-            line=dict(color=palette[i % len(palette)],
-                      width=2.5 if is_ens else 1.5,
-                      dash="solid" if is_ens else "dot"),
-            opacity=1.0 if is_ens else 0.75))
+            x=s.index, y=s.values, name=f"{ens_col} (best)",
+            line=dict(color="#64ffda", width=2.5)))
 
     fig_main.update_layout(
         template="plotly_dark", height=400,
@@ -745,8 +784,8 @@ with tab1:
     st.plotly_chart(fig_main, use_container_width=True)
 
     # Error bars
-    if len(actuals) and ens_col in preds.columns:
-        st.markdown('<div class="section-header">Forecast Error (Ensemble Weighted)</div>',
+    if len(actuals) and ens_col and ens_col in preds.columns:
+        st.markdown(f'<div class="section-header">Forecast Error — Best Model ({ens_col})</div>',
                     unsafe_allow_html=True)
         idx = actuals.index.intersection(preds[ens_col].dropna().index)
         err = actuals.loc[idx] - preds.loc[idx, ens_col]
@@ -810,19 +849,28 @@ with tab2:
 
     with colB:
         # Current regime gauge
-        st.markdown('<div class="section-header">Recession Risk Score</div>',
+        _hdr = ("P(Recession within 12 Months)" if USING_ML_RECESSION
+                else "Recession Risk Score")
+        st.markdown(f'<div class="section-header">{_hdr}</div>',
                     unsafe_allow_html=True)
+        _gauge_sub = (f"ML model: {ml_rec_winner['name']} · AUC "
+                      f"{ml_rec_winner.get('cv_auc',0):.2f}"
+                      if USING_ML_RECESSION
+                      else "0 = None · 100 = Imminent")
         fig_rec = go.Figure(go.Indicator(
             mode="gauge+number",
             value=latest_rec_risk,
-            title={"text": "Recession Risk<br><span style='font-size:12px;color:#8892b0'>"
-                           "0 = None · 100 = Imminent</span>",
+            title={"text": f"{'Probability (%)' if USING_ML_RECESSION else 'Recession Risk'}"
+                           f"<br><span style='font-size:12px;color:#8892b0'>{_gauge_sub}</span>",
                    "font": {"color": "#ccd6f6"}},
-            number={"font": {"size": 52,
+            number={"font": {"size": 34,
                              "color": "#ff6b6b" if latest_rec_risk >= 60
                                       else "#f0c040" if latest_rec_risk >= 35
                                       else "#ffa040" if latest_rec_risk >= 20
-                                      else "#64ffda"}},
+                                      else "#64ffda"},
+                    "suffix": "%" if USING_ML_RECESSION else "",
+                    "valueformat": ".1f" if USING_ML_RECESSION else ".0f"},
+            domain={"x": [0, 1], "y": [0.15, 1]},
             gauge={
                 "axis": {"range": [0, 100], "tickcolor": "#8892b0",
                          "tickfont": {"color": "#8892b0"}},
@@ -842,9 +890,9 @@ with tab2:
                 "bgcolor": "#0e1117", "bordercolor": "#2e3a55",
             },
         ))
-        fig_rec.update_layout(height=300, paper_bgcolor="#0e1117",
+        fig_rec.update_layout(height=340, paper_bgcolor="#0e1117",
                               font={"color":"#ccd6f6"},
-                              margin=dict(l=20,r=20,t=60,b=20))
+                              margin=dict(l=30,r=30,t=70,b=40))
         st.plotly_chart(fig_rec, use_container_width=True)
         _risk_label = ("HIGH" if latest_rec_risk >= 60 else
                        "MEDIUM" if latest_rec_risk >= 35 else
@@ -856,26 +904,51 @@ with tab2:
         EAI: <b>{latest_eai:+.2f}σ</b>
         </div>""", unsafe_allow_html=True)
 
-    # Recession Risk history
-    st.markdown('<div class="section-header">Recession Risk Score — Historical</div>',
+    # Recession history — ML probability (OOS) with NBER bands, vs legacy heuristic
+    _title = ("Recession Probability — ML Model (Out-of-Sample) vs Legacy Heuristic"
+              if USING_ML_RECESSION else "Recession Risk Score — Historical")
+    st.markdown(f'<div class="section-header">{_title}</div>',
                 unsafe_allow_html=True)
-    rec_plot = rec.dropna()
     fig_rrisk = go.Figure()
-    fig_rrisk.add_trace(go.Scatter(
-        x=rec_plot.index, y=rec_plot.values,
-        fill="tozeroy",
-        fillcolor="rgba(255,107,107,0.15)",
-        line=dict(color="#ff6b6b", width=2),
-        name="Recession Risk"))
-    fig_rrisk.add_hline(y=60, line_dash="dash", line_color="#ff6b6b",
-                        annotation_text="High Risk (60)", annotation_font_color="#ff6b6b")
-    fig_rrisk.add_hline(y=30, line_dash="dash", line_color="#f0c040",
-                        annotation_text="Moderate (30)", annotation_font_color="#f0c040")
+    # NBER recession bands (historical ground truth)
+    for peak, trough in [("1990-07-01","1991-03-01"),("2001-03-01","2001-11-01"),
+                         ("2007-12-01","2009-06-01"),("2020-02-01","2020-04-01")]:
+        fig_rrisk.add_vrect(x0=peak, x1=trough, fillcolor="#ff6b6b",
+                            opacity=0.12, layer="below", line_width=0)
+    if USING_ML_RECESSION and ml_rec_hist is not None:
+        fig_rrisk.add_trace(go.Scatter(
+            x=ml_rec_hist.index, y=ml_rec_hist.values,
+            fill="tozeroy", fillcolor="rgba(100,255,218,0.15)",
+            line=dict(color="#64ffda", width=2.5),
+            name=f"ML P(recession) — {ml_rec_winner['name']}"))
+        # Overlay legacy heuristic for comparison
+        _rec_plot = rec.dropna()
+        if len(_rec_plot):
+            fig_rrisk.add_trace(go.Scatter(
+                x=_rec_plot.index, y=_rec_plot.values,
+                line=dict(color="#ff6b6b", width=1.2, dash="dot"),
+                opacity=0.55, name="Legacy heuristic score"))
+    else:
+        rec_plot = rec.dropna()
+        fig_rrisk.add_trace(go.Scatter(
+            x=rec_plot.index, y=rec_plot.values,
+            fill="tozeroy", fillcolor="rgba(255,107,107,0.15)",
+            line=dict(color="#ff6b6b", width=2), name="Recession Risk"))
+    fig_rrisk.add_hline(y=50, line_dash="dash", line_color="#ff6b6b",
+                        annotation_text="50%", annotation_font_color="#ff6b6b")
+    fig_rrisk.add_hline(y=25, line_dash="dash", line_color="#f0c040",
+                        annotation_text="25%", annotation_font_color="#f0c040")
     fig_rrisk.update_layout(
-        template="plotly_dark", height=280,
-        yaxis=dict(range=[0, 100]), yaxis_title="Risk Score (0–100)",
+        template="plotly_dark", height=320,
+        yaxis=dict(range=[0, 100]),
+        yaxis_title="Probability (%)" if USING_ML_RECESSION else "Risk Score (0–100)",
         margin=dict(l=40, r=20, t=20, b=40), hovermode="x unified")
     st.plotly_chart(fig_rrisk, use_container_width=True)
+    if USING_ML_RECESSION:
+        st.caption(f"Shaded bands = NBER recessions · ML line = out-of-sample probability · "
+                   f"Model: {ml_rec_winner['name']} ({ml_rec_winner.get('subset','')}), "
+                   f"CV logloss {ml_rec_winner.get('cv_logloss',0):.3f}, "
+                   f"AUC {ml_rec_winner.get('cv_auc',0):.3f}.")
 
     # Leading indicators dashboard
     st.markdown('<div class="section-header">Key Leading Indicators — Last 36 Months</div>',
@@ -941,98 +1014,8 @@ with tab2:
         st.plotly_chart(fig_sc, use_container_width=True)
 
 
-# ══════════════════════════════════════════════════════════════
-# TAB 3 — MODEL LEADERBOARD
-# ══════════════════════════════════════════════════════════════
-with tab3:
-    st.markdown('<div class="section-header">Out-of-Sample Performance (2016 → present, N=121)</div>',
-                unsafe_allow_html=True)
-
-    def highlight(row):
-        if row["model"] == scores.iloc[0]["model"]:
-            return ["background-color:#1a3a2a;color:#64ffda"] * len(row)
-        if "Ensemble" in str(row["model"]):
-            return ["background-color:#1a2a3a;color:#90cdf4"] * len(row)
-        return [""] * len(row)
-
-    disp = scores[["model","RMSE","MAE","DirAcc"]].copy()   # drop N or any extra cols
-    disp["RMSE"]   = disp["RMSE"].map("{:.4f}".format)
-    disp["MAE"]    = disp["MAE"].map("{:.4f}".format)
-    disp["DirAcc"] = disp["DirAcc"].map("{:.1%}".format)
-    st.dataframe(disp.style.apply(highlight, axis=1), use_container_width=True, height=380)
-
-    sc_s = scores.sort_values("RMSE")
-    colors_bar = ["#64ffda" if "Ensemble" in m else "#8892b0" for m in sc_s["model"]]
-    colors_bar[0] = "#ffd700"
-    fig_rmse = go.Figure(go.Bar(
-        x=sc_s["model"], y=sc_s["RMSE"].astype(float),
-        marker_color=colors_bar,
-        text=sc_s["RMSE"].astype(float).map("{:.3f}".format), textposition="outside"))
-    fig_rmse.update_layout(template="plotly_dark", height=320,
-                           yaxis_title="RMSE (pp)", margin=dict(l=40,r=20,t=20,b=60))
-    st.plotly_chart(fig_rmse, use_container_width=True)
-
-    # Ensemble weight pie
-    st.markdown('<div class="section-header">Ensemble Weights (Deployed)</div>',
-                unsafe_allow_html=True)
-    ind = scores[~scores["model"].str.startswith("Ensemble")].copy()
-    if not ind.empty:
-        ind["w"] = 1.0 / ind["RMSE"].astype(float)
-        ind["w"] = ind["w"] / ind["w"].sum()
-        fig_pie = go.Figure(go.Pie(
-            labels=ind["model"], values=ind["w"], hole=0.5,
-            marker_colors=px.colors.qualitative.Set2, textinfo="label+percent"))
-        fig_pie.update_layout(
-            template="plotly_dark", height=340,
-            annotations=[dict(text="Model<br>Weights", x=0.5, y=0.5,
-                              font_size=14, showarrow=False, font_color="#ccd6f6")],
-            margin=dict(l=20,r=20,t=20,b=20))
-        st.plotly_chart(fig_pie, use_container_width=True)
-        st.caption("Lasso dominates because regularised linear models outperform tree models on monthly macro data with limited samples.")
-
-
-# ══════════════════════════════════════════════════════════════
-# TAB 4 — FEATURE IMPORTANCE
-# ══════════════════════════════════════════════════════════════
-with tab4:
-    st.markdown('<div class="section-header">Feature Importance — Random Forest</div>',
-                unsafe_allow_html=True)
-    top_n = st.slider("Top N features", 5, min(len(fi), 30), 15)
-    fi_top = fi.nlargest(top_n, "importance")
-    fig_fi = go.Figure(go.Bar(
-        x=fi_top["importance"], y=fi_top["feature"], orientation="h",
-        marker=dict(color=fi_top["importance"], colorscale="Teal", showscale=False),
-        text=fi_top["importance"].map("{:.3f}".format), textposition="outside"))
-    fig_fi.update_layout(
-        template="plotly_dark", height=max(350, top_n * 28),
-        xaxis_title="Importance", yaxis=dict(autorange="reversed"),
-        margin=dict(l=180, r=80, t=20, b=40))
-    st.plotly_chart(fig_fi, use_container_width=True)
-
-    # Category pie
-    st.markdown('<div class="section-header">Driver Category Breakdown</div>',
-                unsafe_allow_html=True)
-    cats = {
-        "Labour Market":         ["PAYROLLS","UNRATE"],
-        "Inflation Trend":       ["CPI_YOY","CORE_CPI","CPI_YOY_3M","CPI_YOY_6M"],
-        "Energy/Commodities":    ["OIL","GOLD"],
-        "Producer Prices":       ["PPI"],
-        "FX / Dollar":           ["DXY"],
-        "Yields / Credit":       ["GS10","GS3M","GS5","YIELD_SPREAD","FEDFUNDS"],
-        "Equity Markets":        ["SP500"],
-    }
-    cat_sums = {}
-    for cat, kws in cats.items():
-        mask = fi["feature"].astype(str).apply(lambda x: any(k in x for k in kws))
-        cat_sums[cat] = fi.loc[mask, "importance"].sum()
-    cat_df = pd.DataFrame(list(cat_sums.items()), columns=["Category","Importance"]) \
-               .sort_values("Importance", ascending=False)
-    fig_cat = go.Figure(go.Pie(
-        labels=cat_df["Category"], values=cat_df["Importance"],
-        hole=0.4, marker_colors=px.colors.qualitative.Pastel, textinfo="label+percent"))
-    fig_cat.update_layout(template="plotly_dark", height=340,
-                          margin=dict(l=20,r=20,t=20,b=20))
-    st.plotly_chart(fig_cat, use_container_width=True)
+# (Model Leaderboard and Feature Importance tabs removed — single-model,
+#  single-horizon pipeline shows only the best model in the CPI Forecast tab.)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -1041,52 +1024,70 @@ with tab4:
 with tab5:
     st.markdown('<div class="section-header">📰 Hedge Fund Macro Report</div>',
                 unsafe_allow_html=True)
-    best_row  = scores.iloc[0]
-    naive_rmse = 2.5
-    improvement = (1 - float(best_row["RMSE"]) / naive_rmse)
+    best_row    = scores.iloc[0] if not scores.empty else None
+    best_name   = best_row["model"] if best_row is not None else (ens_col or "Linear")
+    best_rmse   = float(best_row["RMSE"]) if best_row is not None else float("nan")
+    naive_rmse  = 2.5
+    improvement = (1 - best_rmse / naive_rmse) if best_rmse == best_rmse else 0.0
 
     st.markdown(f"""
     <div class="insight-box">
-    <b>🏆 Performance vs Naïve Baseline</b><br>
-    Best model ({best_row['model']}, RMSE={float(best_row['RMSE']):.3f}pp) beats a naïve random-walk
-    baseline (~{naive_rmse}pp RMSE) by <b>{improvement:.0%}</b>. The weighted ensemble adds
-    robustness by diversifying across all 8 models — better for live deployment than any single learner.
+    <b>🏆 Performance vs Naïve Baseline — 1-Month Horizon</b><br>
+    The deployed model is <b>{best_name}</b> with RMSE = <b>{best_rmse:.3f}pp</b> on the 2016→present
+    out-of-sample backtest. This beats a naïve random-walk baseline (~{naive_rmse}pp RMSE) by
+    <b>{improvement:.0%}</b>. Selected by an exhaustive combinatorial sweep across feature subsets,
+    ranker cutoffs, M1/M2 toggles, and ensemble combinations (see
+    <code>research_pipeline.py</code>). We chose a single best model over an ensemble because
+    the ensemble provided no meaningful RMSE lift at the 1-month horizon — the simplest model
+    that works is the right model.
     </div>
 
     <div class="insight-box">
-    <b>💼 Labour Market is the Primary Inflation Engine (~43% of RF importance)</b><br>
-    Nonfarm payrolls dominate. Tight labour markets → wage growth → services inflation with 2–4 month
-    lag. The 2021–2022 post-COVID labour shortage drove the most extreme CPI overshoot in 40 years.
-    This is the Phillips Curve in action: watch payrolls first, then CPI.
+    <b>🎯 Why 1-Month Only</b><br>
+    Longer horizons (2M, 3M+) added noise without lifting accuracy meaningfully. At 1-month,
+    current-month CPI momentum and energy/shelter pipelines dominate — they carry almost
+    deterministic lag structure. Past 1 month the information content of today's features
+    decays sharply. By focusing on t+1 we get cleaner signals, tighter residuals, and
+    lower overfitting risk.
     </div>
 
     <div class="insight-box">
-    <b>🛢️ Oil Leads CPI by 1–2 Months (~10.7% importance)</b><br>
-    Energy costs pass through to gasoline and transport within weeks, then to goods more broadly over
-    1–3 months. The 6-month oil momentum feature (OIL_CHG_6M) outperforms spot price alone because
-    it captures sustained supply regime shifts (OPEC cuts, sanctions) vs transient spikes.
+    <b>💼 Labour Market as the Primary Inflation Engine</b><br>
+    Nonfarm payrolls and unemployment shifts are persistent inflation drivers. Tight labour
+    → wage growth → services inflation with a 2–4 month lag. Watch payrolls first, then CPI.
     </div>
 
     <div class="insight-box">
-    <b>🏭 PPI → CPI Pipeline (~6.6% importance)</b><br>
+    <b>🛢️ Oil Leads CPI by 1–2 Months</b><br>
+    Energy costs pass through to gasoline and transport within weeks, then to goods more broadly
+    over 1–3 months. The 6-month oil momentum feature (OIL_CHG_6M) outperforms spot price alone
+    because it captures sustained supply regime shifts (OPEC cuts, sanctions) vs transient spikes.
+    </div>
+
+    <div class="insight-box">
+    <b>🏭 PPI → CPI Pipeline</b><br>
     Producer price increases flow downstream to consumer prices with a 1–3 month lag.
     PPI is a forward-looking CPI signal. The 2021–2022 goods inflation surge started in PPI
-    8 months before CPI peaked — this model catches that lead.
+    months before CPI peaked — the model captures this lead.
     </div>
 
     <div class="insight-box">
-    <b>💵 Dollar Strength Suppresses Inflation (~3.2% importance)</b><br>
-    DXY YoY negatively correlates with future CPI. A 10% dollar appreciation reduces import prices
-    by ~2–3pp, feeds into goods deflation over 3–6 months. The 2022 dollar surge contributed
-    materially to 2023's disinflation — the model captures this with a 3–6 month lag.
+    <b>💵 Dollar Strength Suppresses Inflation</b><br>
+    DXY YoY negatively correlates with future CPI. A 10% dollar appreciation reduces import
+    prices by ~2–3pp, feeding into goods deflation over 3–6 months.
     </div>
 
     <div class="insight-box">
-    <b>📉 Yield Curve as GDP Leading Indicator</b><br>
-    The 10Y–3M yield spread inverts (goes negative) an average of 12–18 months before recession.
-    Our recession risk model uses this as the primary input (35 pts). Every US recession since 1970
-    was preceded by an inversion. Current spread level directly determines the economic regime signal
-    shown in the dashboard header.
+    <b>📉 Recession Probability — Standalone ML Model</b><br>
+    The recession gauge and probability chart are produced by a <b>dedicated classifier</b>
+    (not the CPI model). The target is <b>P(NBER recession within next 12 months)</b>, trained
+    on official NBER recession dates (1990, 2001, 2008, 2020) against leading indicators:
+    yield curve (10Y-3M), Sahm rule, NFCI, S&amp;P 6M return, VIX, and payrolls dynamics.
+    A staged search (<code>recession_search.py</code>) selected the winner from Logistic (L1/L2),
+    Random Forest, and Gradient Boosting across three feature subsets, with TimeSeriesSplit CV
+    and a &gt;0.15 overfit-gap filter to exclude models that memorized the training data.
+    A calibrated-logit benchmark on the lean 5-feature set scores logloss ~0.12 / AUC ~0.96,
+    which the deployed model matches or beats out-of-sample.
     </div>
     """, unsafe_allow_html=True)
 

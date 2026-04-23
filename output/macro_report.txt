@@ -1,6 +1,6 @@
 ====================================================================
   MACRO INFLATION FORECAST REPORT
-  Generated: 20 April 2026
+  Generated: 22 April 2026
 ====================================================================
 
   SECTION 1 — CURRENT STATE
@@ -16,23 +16,18 @@
 ────────────────────────────────────────────────────────────────────
   Horizon          Forecast     vs Now Best Model            
   ··························································
-  1 Month             3.73%  ↑0.48pp   Lasso
-  2 Month             2.94%  ↓0.31pp   Lasso
-  3 Month             3.09%  ↓0.16pp   Lasso
+  1 Month             3.43%  ↑0.17pp   Linear
 
   SECTION 3 — MODEL PERFORMANCE (OOS Backtest 2016–present)
 ────────────────────────────────────────────────────────────────────
   Horizon    Best Model                 RMSE      MAE    DirAcc
   ··························································
-  1M         Lasso                    0.429pp   0.301pp    65.6%
-  2M         Lasso                    0.819pp   0.567pp    51.2%
-  3M         Lasso                    1.118pp   0.732pp    54.2%
+  1M         Linear                   0.332pp   0.240pp    68.0%
 
   SECTION 4 — INFLATION INTERPRETATION
 ────────────────────────────────────────────────────────────────────
-  Inflation is STABLE — forecast to hold near 3.1% in 3 months.
+  Inflation is STABLE — forecast to hold near 3.4% next month.
   At 3.3%, inflation is 1.3pp ABOVE the Fed's 2% target. Monetary policy remains restrictive.
-  The 12-month trajectory points to 3.3%, a continued but gradual disinflation path.
 
   INFLATION DRIVERS
 

@@ -2,8 +2,8 @@
 Macro Inflation Predictor — master entrypoint.
 
 Modes:
-  python main.py              → baseline 3M backtest (fast, ~3 min)
-  python main.py --report     → full multi-horizon forecast + hedge fund report (~15 min)
+  python main.py              → baseline 1M backtest (fast, ~3 min)
+  python main.py --report     → full 1M forecast + hedge fund report (~10 min)
   python main.py --enhanced   → also fetches extra macro variables first
 """
 import os, sys, warnings, logging
@@ -36,7 +36,7 @@ os.makedirs(OUT_DIR, exist_ok=True)
 
 REPORT_MODE   = "--report"   in sys.argv
 ENHANCED_MODE = "--enhanced" in sys.argv or REPORT_MODE  # report always uses enhanced
-HORIZONS      = [1, 2, 3] if REPORT_MODE else [3]
+HORIZONS      = [1]   # single-horizon pipeline — 1-month ahead CPI only
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -85,7 +85,7 @@ def run_baseline_quick(clean_df: pd.DataFrame):
                             ens_wavg, ens_stack], axis=1)
     all_sc    = score(actuals, combined)
 
-    print("\n[main] Model scores (3M horizon):")
+    print("\n[main] Model scores (1M horizon):")
     print(all_sc.to_string(index=False))
 
     # Save for Streamlit
@@ -125,33 +125,32 @@ def run_full_report(clean_df: pd.DataFrame, raw_df: pd.DataFrame):
         initial_train_end="2015-12-31",
     )
 
-    # ── 2. Save scores for Streamlit ─────────────────────────────────────────
-    # Use 3M scores as the main leaderboard
-    if 3 in all_scores:
-        all_scores[3].to_csv(os.path.join(OUT_DIR, "scores.csv"), index=False)
-    if 3 in all_preds:
-        pred_df, actuals = all_preds[3]
-        bm  = best_models.get(3, "Lasso")
+    # ── 2. Save scores for Streamlit (1M leaderboard) ────────────────────────
+    if 1 in all_scores:
+        all_scores[1].to_csv(os.path.join(OUT_DIR, "scores.csv"), index=False)
+    if 1 in all_preds:
+        pred_df, actuals = all_preds[1]
+        bm  = best_models.get(1, "Linear")
         out = pred_df.copy()
         out["actual"] = actuals
         out.to_csv(os.path.join(OUT_DIR, "predictions.csv"))
 
-    # ── 3. Feature importance (3M enhanced) ──────────────────────────────────
+    # ── 3. Feature importance (1M enhanced) ──────────────────────────────────
     fi = None
     try:
         from feature_engineering import build_features_enhanced
         from sklearn.base import clone
-        feats3, _ = _get_feats(clean_df, 3, ENHANCED_MODE)
+        feats1, _ = _get_feats(clean_df, 1, ENHANCED_MODE)
         tree = clone(get_models()["RandomForest"])
-        t_cols = [c for c in feats3.columns if c.startswith("inflation_future")]
-        X = feats3.drop(columns=t_cols)
-        y = feats3[[c for c in t_cols if "3m" in c or c == "inflation_future"][0]]
+        t_cols = [c for c in feats1.columns if c.startswith("inflation_future")]
+        X = feats1.drop(columns=t_cols)
+        y = feats1[[c for c in t_cols if "1m" in c or c == "inflation_future"][0]]
         mask = y.notna()
         tree.fit(X[mask].values, y[mask].values)
         fi = pd.Series(tree.feature_importances_,
                        index=X.columns).sort_values(ascending=False)
         fi.to_csv(os.path.join(OUT_DIR, "feature_importance.csv"))
-        print("\n[main] Top 10 features (3M enhanced):")
+        print("\n[main] Top 10 features (1M enhanced):")
         print(fi.head(10).to_string())
     except Exception as e:
         print(f"[main] FI failed: {e}")
@@ -245,7 +244,7 @@ def main():
 
     # 3. Clean + multi-horizon targets
     clean_df = clean(working)
-    clean_df = make_targets(clean_df, horizons=[1, 2, 3])
+    clean_df = make_targets(clean_df, horizons=HORIZONS)
     print(f"[main] Clean shape: {clean_df.shape}")
 
     # 4. Run pipeline

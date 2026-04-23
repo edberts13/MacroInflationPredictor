@@ -19,7 +19,7 @@ warnings.filterwarnings("ignore")
 OUT_DIR = "output"
 os.makedirs(OUT_DIR, exist_ok=True)
 
-HORIZONS = [1, 2, 3]
+HORIZONS = [1]   # single-horizon report — 1-month ahead only
 FED_TARGET = 2.0
 
 
@@ -296,20 +296,19 @@ def assess_signals(raw: pd.DataFrame) -> dict:
 # MACRO INTERPRETATION (plain English)
 # ─────────────────────────────────────────────────────────────────────────────
 def interpret_inflation(sig: dict, forecasts: dict) -> list:
-    """Returns list of interpretation strings."""
+    """Returns list of interpretation strings (1-month horizon only)."""
     lines = []
     cpi = sig["cpi_yoy"]
-    f3  = forecasts.get(3, cpi)
-    f12 = forecasts.get(12, cpi)
+    f1  = forecasts.get(1, cpi)
     gap_to_target = cpi - FED_TARGET
 
-    # Direction
-    if f3 > cpi + 0.2:
-        direction = f"RISING — forecast to accelerate to {f3:.1f}% in 3 months"
-    elif f3 < cpi - 0.2:
-        direction = f"FALLING — forecast to decelerate to {f3:.1f}% in 3 months"
+    # Direction (1M only)
+    if f1 > cpi + 0.2:
+        direction = f"RISING — forecast to accelerate to {f1:.1f}% next month"
+    elif f1 < cpi - 0.2:
+        direction = f"FALLING — forecast to decelerate to {f1:.1f}% next month"
     else:
-        direction = f"STABLE — forecast to hold near {f3:.1f}% in 3 months"
+        direction = f"STABLE — forecast to hold near {f1:.1f}% next month"
     lines.append(f"Inflation is {direction}.")
 
     # Above/below target
@@ -322,17 +321,6 @@ def interpret_inflation(sig: dict, forecasts: dict) -> list:
     else:
         lines.append(f"At {cpi:.1f}%, inflation has FALLEN BELOW the Fed's 2% target. "
                      f"Risk of over-tightening increases.")
-
-    # 12M outlook
-    if f12 < FED_TARGET + 0.3:
-        lines.append(f"The 12-month forecast of {f12:.1f}% suggests inflation is "
-                     f"on track to return to target by end of the forecast horizon.")
-    elif f12 > cpi:
-        lines.append(f"The 12-month forecast of {f12:.1f}% is HIGHER than current — "
-                     f"inflation may be re-accelerating. Watch for second-wave dynamics.")
-    else:
-        lines.append(f"The 12-month trajectory points to {f12:.1f}%, a continued "
-                     f"but gradual disinflation path.")
 
     return lines
 
@@ -678,8 +666,8 @@ def _compute_recession_risk(raw: pd.DataFrame) -> pd.Series:
 # PLOTTING
 # ─────────────────────────────────────────────────────────────────────────────
 def plot_full_report(raw, all_preds, forecasts, best_models, all_scores, sig):
-    """Multi-panel hedge fund chart."""
-    HORIZONS = [1, 2, 3]
+    """Multi-panel hedge fund chart (1-month horizon only)."""
+    HORIZONS = [1]
 
     fig = plt.figure(figsize=(18, 22), facecolor="#0e1117")
     gs  = gridspec.GridSpec(4, 2, figure=fig,
@@ -705,8 +693,8 @@ def plot_full_report(raw, all_preds, forecasts, best_models, all_scores, sig):
     ax1.plot(cpi_yoy.index, cpi_yoy.values, color="white", lw=2.5,
              label="Actual CPI YoY", zorder=5)
 
-    colors_h = {1: TEAL, 2: BLUE, 3: AMBER}
-    for h in [1, 2, 3]:
+    colors_h = {1: TEAL}
+    for h in HORIZONS:
         if h not in all_preds:
             continue
         pred_df, actuals = all_preds[h]

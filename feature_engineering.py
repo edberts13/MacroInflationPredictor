@@ -88,6 +88,27 @@ def build_features(df: pd.DataFrame,
     return f.dropna()
 
 
+def add_money_supply(f: pd.DataFrame, df: pd.DataFrame,
+                     include_m1: bool = True,
+                     include_m2: bool = True) -> pd.DataFrame:
+    """Attach M1/M2/FEDFUNDS features (toggleable per experiment)."""
+    if include_m2 and "M2_YOY" in df.columns:
+        f["M2_YOY"]     = df["M2_YOY"]
+        f["M2_YOY_L6"]  = df.get("M2_YOY_L6", df["M2_YOY"].shift(6))
+        f["M2_YOY_L12"] = df.get("M2_YOY_L12", df["M2_YOY"].shift(12))
+        if "M2_3M" in df.columns:
+            f["M2_3M"] = df["M2_3M"]
+    if include_m1 and "M1_YOY" in df.columns:
+        f["M1_YOY"]    = df["M1_YOY"]
+        f["M1_YOY_L6"] = df.get("M1_YOY_L6", df["M1_YOY"].shift(6))
+    # FEDFUNDS is standard policy rate — include whenever available
+    if "FEDFUNDS" in df.columns:
+        f["FEDFUNDS"]     = df["FEDFUNDS"]
+        f["FEDFUNDS_CHG"] = df.get("FEDFUNDS_CHG", df["FEDFUNDS"].diff(3))
+        f["FEDFUNDS_L6"]  = df.get("FEDFUNDS_L6", df["FEDFUNDS"].shift(6))
+    return f
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # ENHANCED FEATURES — adds on top of baseline
 # ─────────────────────────────────────────────────────────────────────────────
@@ -101,7 +122,9 @@ def _lag_roll(f: pd.DataFrame, base_col: str, src: pd.Series):
 
 
 def build_features_enhanced(df: pd.DataFrame,
-                             target_col: str = "inflation_future") -> pd.DataFrame:
+                             target_col: str = "inflation_future",
+                             include_m1: bool = True,
+                             include_m2: bool = True) -> pd.DataFrame:
     """
     Baseline features + high-impact additions.
 
@@ -129,6 +152,9 @@ def build_features_enhanced(df: pd.DataFrame,
     """
     # Start from baseline
     f = build_features(df, target_col=target_col)
+
+    # Money supply (toggleable)
+    f = add_money_supply(f, df, include_m1=include_m1, include_m2=include_m2)
 
     # ── Sticky Inflation — Shelter / OER / Rent ──────────────
     # OER alone = 24 % of CPI basket; leads headline CPI by 6–18 months

@@ -49,6 +49,11 @@ FRED_SERIES = {
 
     # Yield curve
     "T10Y2Y":       "T10Y2Y",         # 10Y minus 2Y Treasury spread
+
+    # Money supply
+    "M1":           "M1SL",           # M1 Money Stock (billions USD, SA)
+    "M2":           "M2SL",           # M2 Money Stock (billions USD, SA)
+    "FEDFUNDS":     "FEDFUNDS",       # Effective Federal Funds Rate
 }
 
 # ─── BLS Extended Series ──────────────────────────────────────
@@ -373,6 +378,27 @@ def compute_derived_proxies(yf_m: pd.DataFrame,
         px["YIELD_SPREAD_10_2Y_L1"]  = t10y2y.shift(1)
         px["YIELD_SPREAD_10_2Y_L3"]  = t10y2y.shift(3)
         print("  Using REAL 10Y-2Y spread (T10Y2Y)")
+
+    # ── Money Supply: M1, M2, FEDFUNDS ────────────────────────
+    # Monetarist view: M2 growth leads CPI by 12-24 months
+    if not fred_df.empty and "M2" in fred_df.columns:
+        m2 = fred_df["M2"].reindex(px.index).ffill()
+        px["M2_YOY"]   = m2.pct_change(12) * 100
+        px["M2_3M"]    = m2.pct_change(3) * 100
+        px["M2_YOY_L6"]  = px["M2_YOY"].shift(6)    # 6M lag
+        px["M2_YOY_L12"] = px["M2_YOY"].shift(12)   # 12M lag
+        print("  Using REAL M2 Money Stock (M2SL)")
+    if not fred_df.empty and "M1" in fred_df.columns:
+        m1 = fred_df["M1"].reindex(px.index).ffill()
+        px["M1_YOY"]    = m1.pct_change(12) * 100
+        px["M1_YOY_L6"] = px["M1_YOY"].shift(6)
+        print("  Using REAL M1 Money Stock (M1SL)")
+    if not fred_df.empty and "FEDFUNDS" in fred_df.columns:
+        ff = fred_df["FEDFUNDS"].reindex(px.index).ffill()
+        px["FEDFUNDS"]     = ff
+        px["FEDFUNDS_CHG"] = ff.diff(3)
+        px["FEDFUNDS_L6"]  = ff.shift(6)
+        print("  Using REAL Fed Funds Rate (FEDFUNDS)")
 
     # ── Supply chain (XLB proxy always useful as complement) ──
     if not yf_m.empty and "XLB_ETF" in yf_m.columns:

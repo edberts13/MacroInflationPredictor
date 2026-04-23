@@ -1,0 +1,4 @@
+model,subset,include_m1,include_m2,n_features,best_params,cv_logloss,cv_brier,cv_auc,train_logloss,overfit_gap,_is_winner
+RandomForest,economic_core,False,False,8,"{""max_depth"": 3, ""min_samples_leaf"": 2, ""n_estimators"": 200}",0.14214187773345258,0.030147703517541147,0.9765556045895852,0.06812475544111252,0.07401712229234006,True
+Logit_L2,economic_core,False,False,8,"{""C"": 0.1, ""penalty"": ""l2""}",0.15944273311171128,0.035141429254562796,0.9800308914386584,0.16765645677405883,-0.008213723662347544,False
+Logit_L1,economic_core,False,False,8,"{""C"": 0.1, ""penalty"": ""l1""}",0.19634952059479238,0.0449982323555334,0.9767210944395411,0.23300680919747974,-0.036657288602687355,False
