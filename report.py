@@ -274,22 +274,78 @@ def assess_signals(raw: pd.DataFrame) -> dict:
     elif sc_stress == "moderate":
         risk += 4
 
-    sig["recession_risk"] = min(100.0, risk)
-    sig["recession_label"] = "HIGH"   if risk >= 60 else \
-                             "MEDIUM" if risk >= 35 else \
-                             "ELEVATED" if risk >= 20 else "LOW"
+    sig["recession_risk_heuristic"] = min(100.0, risk)
 
-    # ── Economic regime ───────────────────────────────────────
-    if risk >= 60:
+    # ── Override with ML recession probability when available ─────
+    # The dashboard's KPI uses the ML classifier
+    # (recession_winner.json / recession_probs.csv). To keep the text
+    # report consistent with the KPI, we prefer the ML probability and
+    # fall back to the heuristic only if the ML artefacts are missing.
+    ml_risk = _load_ml_recession_prob()
+    if ml_risk is not None:
+        sig["recession_risk"] = ml_risk
+        sig["recession_source"] = "ml"
+    else:
+        sig["recession_risk"] = sig["recession_risk_heuristic"]
+        sig["recession_source"] = "heuristic"
+
+    r = sig["recession_risk"]
+    sig["recession_label"] = "HIGH"   if r >= 60 else \
+                             "MEDIUM" if r >= 35 else \
+                             "ELEVATED" if r >= 20 else "LOW"
+
+    # ── Economic regime (same thresholds as app.py KPI) ──────────
+    if r >= 60:
         sig["regime"] = "CONTRACTION"
-    elif risk >= 35:
+    elif r >= 35:
         sig["regime"] = "SLOWDOWN"
-    elif risk >= 20:
+    elif r >= 20:
         sig["regime"] = "LATE CYCLE"
     else:
         sig["regime"] = "EXPANSION"
 
     return sig
+
+
+def _load_ml_recession_prob():
+    """
+    Load the latest ML recession probability (0–100 scale) if the
+    winner artefacts exist. Prefers the live refit current prediction;
+    falls back to the last OOF probability in recession_probs.csv.
+    Returns None if no ML artefacts are available.
+    """
+    import json, os
+    out_dir = "output"
+    wpath = os.path.join(out_dir, "recession_winner.json")
+    ppath = os.path.join(out_dir, "recession_probs.csv")
+    if not (os.path.exists(wpath) and os.path.exists(ppath)):
+        return None
+    try:
+        winner = json.load(open(wpath))
+        # Try live refit first (uses the very latest macro data)
+        if winner.get("kind") == "single":
+            try:
+                from recession_infer import fit_and_predict_current
+                # Prefer enhanced dataset, fall back to raw
+                raw = None
+                for p in ("macro_enhanced.csv", "macro_raw.csv",
+                          os.path.join(out_dir, "macro_indicators.csv")):
+                    if os.path.exists(p):
+                        raw = pd.read_csv(p, index_col="date", parse_dates=True)
+                        break
+                if raw is not None and not raw.empty:
+                    res = fit_and_predict_current(raw, winner)
+                    return float(res["prob"]) * 100.0
+            except Exception:
+                pass
+        # Fallback: last OOF probability
+        probs = pd.read_csv(ppath, parse_dates=["date"]).set_index("date")
+        s = probs["recession_prob"].dropna()
+        if len(s):
+            return float(s.iloc[-1]) * 100.0
+    except Exception:
+        return None
+    return None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -435,9 +491,14 @@ def interpret_economy(sig: dict) -> list:
 
 
 def recession_risk_text(sig: dict) -> list:
-    risk  = sig["recession_risk"]
-    label = sig["recession_label"]
-    lines = [f"Recession Risk Score: {risk:.0f}/100  [{label}]"]
+    risk   = sig["recession_risk"]
+    label  = sig["recession_label"]
+    src    = sig.get("recession_source", "heuristic")
+    if src == "ml":
+        header = (f"Recession Probability (ML, next 12M): {risk:.1f}%  [{label}]")
+    else:
+        header = (f"Recession Risk Score: {risk:.0f}/100  [{label}]  (heuristic fallback)")
+    lines = [header]
 
     # Bullet evidence
     bullets = []

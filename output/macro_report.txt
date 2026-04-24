@@ -1,6 +1,6 @@
 ====================================================================
   MACRO INFLATION FORECAST REPORT
-  Generated: 22 April 2026
+  Generated: 24 April 2026
 ====================================================================
 
   SECTION 1 — CURRENT STATE
@@ -46,19 +46,16 @@
 
   SECTION 5 — ECONOMIC REGIME & RECESSION RISK
 ────────────────────────────────────────────────────────────────────
-  Economic Regime: LATE CYCLE
+  Economic Regime: EXPANSION
   ✅ Yield curve POSITIVE (0.65pp). No near-term recession signal from the curve.
   ✅ VIX at 17.5 — markets are calm, risk appetite healthy.
   🟡 Credit conditions: MODERATE stress. Moderate credit tightening — watch for further widening.
   🟡 Equities flat/mixed (+4.2% 6M). No clear directional signal.
 
-  Recession Risk Score: 23/100  [ELEVATED]
+  Recession Probability (ML, next 12M): 3.4%  [LOW]
   • Yield curve flattening (0.65pp). Historically a late-cycle warning.
   • Payrolls averaging only 15K/month — labour market losing momentum.
   • Credit spreads widening — monitor for further deterioration.
-  • Labour market cooling is the dominant drag.
-  • Base case remains soft landing; risk is non-trivial.
-  • Watch payrolls, credit spreads, and yield curve for deterioration.
 
   SECTION 6 — KEY SIGNALS & WARNINGS
 ────────────────────────────────────────────────────────────────────
